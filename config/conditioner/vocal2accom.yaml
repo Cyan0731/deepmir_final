@@ -1,0 +1,27 @@
+# @package __global__
+
+classifier_free_guidance:
+  training_dropout: 0.3
+  inference_coef: 3.0
+
+attribute_dropout: {}
+
+fuser:
+  cross_attention_pos_emb: false
+  cross_attention_pos_emb_scale: 1
+  sum: []
+  prepend: []
+  cross: [wav_cond]
+  input_interpolate: []
+
+conditioners:
+  wav_cond:
+    model: mert
+    mert:
+      sample_rate: 24000
+      embed_dim: 1024
+
+dataset:
+  train:
+    merge_text_p: 0.25
+    drop_other_p: 0.25
