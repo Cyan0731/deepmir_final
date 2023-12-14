@@ -747,7 +747,7 @@ class MertConditioner(WaveformConditioner):
         self.embed_len = self._get_embed_len()
         self.eval_wavs: tp.Optional[torch.Tensor] = self._load_eval_wavs(eval_wavs, n_eval_wavs)
         self.cache = None
-        self.output_proj = nn.Identity()
+        # self.output_proj = nn.Identity()
 
 
     def _downsampling_factor(self) -> int:

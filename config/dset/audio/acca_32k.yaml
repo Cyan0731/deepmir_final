@@ -1,0 +1,10 @@
+# @package __global__
+
+datasource:
+  max_sample_rate: 32000
+  max_channels: 1
+
+  train: egs/acca_32k
+  valid: egs/acca_32k
+  evaluate: egs/acca_32k
+  generate: egs/acca_32k
