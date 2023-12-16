@@ -820,7 +820,11 @@ class MertConditioner(WaveformConditioner):
             outputs = self.mert(**inputs, output_hidden_states=True)
             outputs = torch.mean(torch.stack(outputs.hidden_states, dim=1), dim=1) # [B, L, T, C] -> [B, T, C]
             # print(outputs.shape)
-            return outputs[:, :1, :]
+            # return outputs[:, :1, :]
+            if outputs.shape[1] == 10:
+                return outputs[:, :1, :]
+            else:
+                return outputs
 
     @torch.no_grad()
     def _compute_wav_embedding(self, wav: torch.Tensor, sample_rate: int) -> torch.Tensor:

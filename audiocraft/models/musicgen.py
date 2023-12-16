@@ -241,6 +241,44 @@ class MusicGen:
         if return_tokens:
             return self.generate_audio(tokens), tokens
         return self.generate_audio(tokens)
+    
+    def generate_with_vocal_lead(self, descriptions: tp.List[str], vocal_wavs: MelodyType,
+                             vocal_sample_rate: int=22050, progress: bool = False,
+                             return_tokens: bool = False) -> tp.Union[torch.Tensor,
+                                                                      tp.Tuple[torch.Tensor, torch.Tensor]]:
+        """Generate samples conditioned on text and melody.
+
+        Args:
+            descriptions (list of str): A list of strings used as text conditioning.
+            melody_wavs: (torch.Tensor or list of Tensor): A batch of waveforms used as
+                melody conditioning. Should have shape [B, C, T] with B matching the description length,
+                C=1 or 2. It can be [C, T] if there is a single description. It can also be
+                a list of [C, T] tensors.
+            melody_sample_rate: (int): Sample rate of the melody waveforms.
+            progress (bool, optional): Flag to display progress of the generation process. Defaults to False.
+        """
+        if isinstance(vocal_wavs, torch.Tensor):
+            if melody_wavs.dim() == 2:
+                melody_wavs = melody_wavs[None]
+            if melody_wavs.dim() != 3:
+                raise ValueError("Melody wavs should have a shape [B, C, T].")
+            melody_wavs = list(melody_wavs)
+        else:
+            for melody in melody_wavs:
+                if melody is not None:
+                    assert melody.dim() == 2, "One melody in the list has the wrong number of dims."
+
+        melody_wavs = [
+            convert_audio(wav, vocal_sample_rate, 22050, self.audio_channels)
+            if wav is not None else None
+            for wav in melody_wavs]
+        attributes, prompt_tokens = self._prepare_tokens_and_attributes(descriptions=descriptions, prompt=None,
+                                                                        melody_wavs=melody_wavs)
+        assert prompt_tokens is None
+        tokens = self._generate_tokens(attributes, prompt_tokens, progress)
+        if return_tokens:
+            return self.generate_audio(tokens), tokens
+        return self.generate_audio(tokens)
 
     def generate_continuation(self, prompt: torch.Tensor, prompt_sample_rate: int,
                               descriptions: tp.Optional[tp.List[tp.Optional[str]]] = None,
@@ -274,7 +312,7 @@ class MusicGen:
             self,
             descriptions: tp.Sequence[tp.Optional[str]],
             prompt: tp.Optional[torch.Tensor],
-            melody_wavs: tp.Optional[MelodyList] = None,
+            vocal_wavs: tp.Optional[MelodyList] = None,
     ) -> tp.Tuple[tp.List[ConditioningAttributes], tp.Optional[torch.Tensor]]:
         """Prepare model inputs.
 
@@ -288,29 +326,29 @@ class MusicGen:
             ConditioningAttributes(text={'description': description})
             for description in descriptions]
 
-        if melody_wavs is None:
+        if vocal_wavs is None:
             for attr in attributes:
-                attr.wav['self_wav'] = WavCondition(
+                attr.wav_cond['wav_cond'] = WavCondition(
                     torch.zeros((1, 1, 1), device=self.device),
                     torch.tensor([0], device=self.device),
                     sample_rate=[self.sample_rate],
                     path=[None])
         else:
-            if 'self_wav' not in self.lm.condition_provider.conditioners:
+            if 'wav_cond' not in self.lm.condition_provider.conditioners:
                 raise RuntimeError("This model doesn't support melody conditioning. "
                                    "Use the `melody` model.")
-            assert len(melody_wavs) == len(descriptions), \
+            assert len(vocal_wavs) == len(descriptions), \
                 f"number of melody wavs must match number of descriptions! " \
-                f"got melody len={len(melody_wavs)}, and descriptions len={len(descriptions)}"
-            for attr, melody in zip(attributes, melody_wavs):
+                f"got melody len={len(vocal_wavs)}, and descriptions len={len(descriptions)}"
+            for attr, melody in zip(attributes, vocal_wavs):
                 if melody is None:
-                    attr.wav['self_wav'] = WavCondition(
+                    attr.wav_cond['wav_cond'] = WavCondition(
                         torch.zeros((1, 1, 1), device=self.device),
                         torch.tensor([0], device=self.device),
                         sample_rate=[self.sample_rate],
                         path=[None])
                 else:
-                    attr.wav['self_wav'] = WavCondition(
+                    attr.wav_cond['wav_cond'] = WavCondition(
                         melody[None].to(device=self.device),
                         torch.tensor([melody.shape[-1]], device=self.device),
                         sample_rate=[self.sample_rate],
