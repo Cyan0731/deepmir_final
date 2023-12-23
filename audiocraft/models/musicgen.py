@@ -76,7 +76,7 @@ class MusicGen:
         self.device = next(iter(lm.parameters())).device
 
         self.generation_params: dict = {}
-        self.set_generation_params(duration=15)  # 15 seconds by default
+        self.set_generation_params(duration=15, extend_stride=7)  # 15 seconds by default
         self._progress_callback: tp.Optional[tp.Callable[[int, int], None]] = None
         if self.device.type == 'cpu':
             self.autocast = TorchAutocast(enabled=False)
@@ -258,23 +258,61 @@ class MusicGen:
             progress (bool, optional): Flag to display progress of the generation process. Defaults to False.
         """
         if isinstance(vocal_wavs, torch.Tensor):
-            if melody_wavs.dim() == 2:
-                melody_wavs = melody_wavs[None]
-            if melody_wavs.dim() != 3:
+            if vocal_wavs.dim() == 2:
+                vocal_wavs = vocal_wavs[None]
+            if vocal_wavs.dim() != 3:
                 raise ValueError("Melody wavs should have a shape [B, C, T].")
-            melody_wavs = list(melody_wavs)
+            vocal_wavs = list(vocal_wavs)
         else:
-            for melody in melody_wavs:
+            for melody in vocal_wavs:
                 if melody is not None:
                     assert melody.dim() == 2, "One melody in the list has the wrong number of dims."
 
-        melody_wavs = [
+        vocal_wavs = [
             convert_audio(wav, vocal_sample_rate, 22050, self.audio_channels)
             if wav is not None else None
-            for wav in melody_wavs]
+            for wav in vocal_wavs]
         attributes, prompt_tokens = self._prepare_tokens_and_attributes(descriptions=descriptions, prompt=None,
-                                                                        melody_wavs=melody_wavs)
+                                                                        vocal_wavs=vocal_wavs)
         assert prompt_tokens is None
+        tokens = self._generate_tokens(attributes, prompt_tokens, progress)
+        if return_tokens:
+            return self.generate_audio(tokens), tokens
+        return self.generate_audio(tokens)
+    
+    def generate_with_vocal_lead_and_prompt(self, descriptions: tp.List[str], vocal_wavs: MelodyType, prompt: torch.Tensor, vocal_sample_rate: int=22050, prompt_sample_rate: int=32000, progress: bool = False,
+                             return_tokens: bool = False) -> tp.Union[torch.Tensor,
+                                                                      tp.Tuple[torch.Tensor, torch.Tensor]]:
+        """Generate samples conditioned on text and melody.
+
+        Args:
+            descriptions (list of str): A list of strings used as text conditioning.
+            melody_wavs: (torch.Tensor or list of Tensor): A batch of waveforms used as
+                melody conditioning. Should have shape [B, C, T] with B matching the description length,
+                C=1 or 2. It can be [C, T] if there is a single description. It can also be
+                a list of [C, T] tensors.
+            melody_sample_rate: (int): Sample rate of the melody waveforms.
+            progress (bool, optional): Flag to display progress of the generation process. Defaults to False.
+        """
+        if isinstance(vocal_wavs, torch.Tensor):
+            if vocal_wavs.dim() == 2:
+                vocal_wavs = vocal_wavs[None]
+            if vocal_wavs.dim() != 3:
+                raise ValueError("Melody wavs should have a shape [B, C, T].")
+            vocal_wavs = list(vocal_wavs)
+        else:
+            for melody in vocal_wavs:
+                if melody is not None:
+                    assert melody.dim() == 2, "One melody in the list has the wrong number of dims."
+
+        vocal_wavs = [
+            convert_audio(wav, vocal_sample_rate, 22050, self.audio_channels)
+            if wav is not None else None
+            for wav in vocal_wavs]
+        prompt = convert_audio(prompt, prompt_sample_rate, self.sample_rate, self.audio_channels)
+        attributes, prompt_tokens = self._prepare_tokens_and_attributes(descriptions=descriptions, prompt=prompt,
+                                                                        vocal_wavs=vocal_wavs)
+        assert prompt_tokens is not None
         tokens = self._generate_tokens(attributes, prompt_tokens, progress)
         if return_tokens:
             return self.generate_audio(tokens), tokens
